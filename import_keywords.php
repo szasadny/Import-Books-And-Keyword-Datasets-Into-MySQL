@@ -1,8 +1,5 @@
 <?php
 
-// Set maximum execution time to 10 minutes
-ini_set('max_execution_time', 600);
-
 // Configuration variables
 $servername = "localhost";
 $username = "root";
@@ -21,11 +18,21 @@ if ($conn->connect_error) {
 
 // Process CSV file
 if (($handle = fopen($csvFile, "r")) !== false) {
- 
-    // We splitsen het hier in twee arrays om lokaal de duplicaten eruit te filteren
-    // en zo het aantal SQL statements the verminderen voor een snellere runtime.
-    $keywordsToAdd = array(); // Lijst met keywords om toe voegen
-    $keywordsExisting = array(); // Lijst met keywords die al toegevoegd zijn
+
+    // We keep track of the duplicates locally to limit the amount of SQL queries being sent.
+    $keywordsToAdd = array();
+    $keywordsExisting = array();
+
+    // Prepare the INSERT statement for keywords
+    $insertKeywordStmt = $conn->prepare("INSERT INTO $table_keyword (keyword) VALUES (?)");
+    $insertKeywordStmt->bind_param("s", $keyword);
+
+    // Prepare the INSERT statement for book-keyword associations
+    $insertBookKeywordStmt = $conn->prepare("INSERT INTO $table_book_keywords (books_id, keywords_id) VALUES (?, ?)");
+    $insertBookKeywordStmt->bind_param("ii", $bookId, $keywordId);
+
+    // Start a transaction
+    $conn->begin_transaction();
 
     while (($data = fgetcsv($handle)) !== false) {
         $isbn = $data[0];
@@ -59,31 +66,28 @@ if (($handle = fopen($csvFile, "r")) !== false) {
                     $keywordId = $keywordsExisting[$keyword];
                 } else {
                     $keyword = $conn->real_escape_string($keyword);
-                    $sql = "INSERT INTO $table_keyword (keyword) VALUES ('$keyword')";
-
-                    if ($conn->query($sql)) {
-                        $keywordId = $conn->insert_id;
-                        $keywordsExisting[$keyword] = $keywordId;
-                    } else {
-                        echo "Error inserting keyword: " . $conn->error;
-                        continue;
-                    }
+                    $insertKeywordStmt->execute();
+                    $keywordId = $insertKeywordStmt->insert_id;
+                    $keywordsExisting[$keyword] = $keywordId;
                 }
 
-                $sql = "INSERT INTO $table_book_keywords (books_id, keywords_id) VALUES ($bookId, $keywordId)";
-
-                if (!$conn->query($sql)) {
-                    echo "Error linking keyword to book: " . $conn->error;
+                $insertBookKeywordStmt->execute();
+                if ($insertBookKeywordStmt->errno) {
+                    echo "Error linking keyword to book: " . $insertBookKeywordStmt->error;
                 }
             }
         }
     }
 
+    // Commit the transaction
+    $conn->commit();
+
     fclose($handle);
 }
 
+$insertKeywordStmt->close();
+$insertBookKeywordStmt->close();
 $conn->close();
 
 echo "Keywords import completed successfully.";
-
 ?>
