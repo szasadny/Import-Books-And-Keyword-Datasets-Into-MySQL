@@ -1,5 +1,4 @@
 <?php
-
 // Configuration variables
 $servername = "localhost";
 $username = "root";
@@ -22,26 +21,32 @@ if (!$file) {
 fgetcsv($file);
 
 // Prepare the SQL statement
-$sql = "INSERT INTO $table (isbn, title, writer, avg_score, active) VALUES (?, ?, ?, ?, ?)";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("sssdi", $isbn, $title, $writer, $avg_score, $active);
+$sql = "INSERT INTO $table (isbn, title, writer, avg_score, active) VALUES ";
 
-// Execute the SQL statement for each row in the CSV file
+// Make an array for all the values that will be inserted
+$toBeInserted = [];
 while (($data = fgetcsv($file)) !== false) {
-    $isbn = $data[0];
-    $title = $data[1];
-    $writer = $data[2];
+    $isbn = mysqli_real_escape_string($conn, $data[0]);
+    $title = mysqli_real_escape_string($conn, $data[1]);
+    $writer = mysqli_real_escape_string($conn, $data[2]);
     $avg_score = floatval($data[3]);
     $active = true;
 
-    // Execute the prepared statement
-    $stmt->execute();
+    $toBeInserted[] = "('$isbn', '$title', '$writer', $avg_score, $active)";
 }
 
-$stmt->close();
-fclose($file);
+// Append the to be inserted values into the SQL statement
+$values = implode(", ", $toBeInserted);
+$sql .= $values;
 
+// Execute the SQL statement
+if ($conn->query($sql) === true) {
+    echo "Data imported successfully!";
+} else {
+    echo "Error importing data: " . $conn->error;
+}
+
+fclose($file);
 $conn->close();
 
-echo "Data imported successfully!";
 ?>
