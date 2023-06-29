@@ -1,4 +1,5 @@
 <?php
+
 // Configuration variables
 $servername = "localhost";
 $username = "root";
